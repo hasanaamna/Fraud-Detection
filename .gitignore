@@ -1,0 +1,63 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Machine learning artifacts and large datasets
+data/raw/
+data/processed/
+*.pkl
+*.pickle
+
+# Keep trained model files locally unless intentionally publishing them
+# Uncomment the next line if model files should not be committed:
+# models/*.joblib
+
+# Logs
+*.log
+logs/
+
+# Reports generated during training (optional)
+# reports/test_predictions.csv
+
+# Node.js / React / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# Build outputs
+build/
+dist/
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.swp
+*.bak

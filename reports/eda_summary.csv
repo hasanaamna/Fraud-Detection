@@ -1,0 +1,8 @@
+,value
+total_transactions,284807.0
+legitimate_transactions,284315.0
+fraudulent_transactions,492.0
+fraud_rate_percent,0.172749
+missing_cells,0.0
+exact_duplicate_rows,1081.0
+total_transaction_amount,25162590.01
