@@ -76,6 +76,28 @@ type TestTransaction = {
   decision_threshold: number;
 };
 
+type FeatureContribution = {
+  feature: string;
+  feature_value: number;
+  shap_value: number;
+  direction: "toward_fraud" | "away_from_fraud" | "neutral";
+};
+
+type Explanation = {
+  model: string;
+  prediction: number;
+  label: string;
+  fraud_probability: number;
+  threshold: number;
+  base_value: number;
+  reconstructed_probability: number;
+  explanation_consistent: boolean;
+  top_features: FeatureContribution[];
+  positive_contributors: FeatureContribution[];
+  negative_contributors: FeatureContribution[];
+  feature_note: string;
+};
+
 type Prediction = {
   prediction: number;
   label: string;
@@ -133,6 +155,8 @@ function App() {
 
   const [transaction, setTransaction] = useState(initialTransaction);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [explanation, setExplanation] = useState<Explanation | null>(null);
+  const [explanationError, setExplanationError] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dashboardError, setDashboardError] = useState("");
@@ -142,35 +166,59 @@ function App() {
     setDashboardError("");
 
     try {
-      const [healthResponse, statsResponse, trendResponse, samplesResponse] =
-        await Promise.all([
-          fetch(`${API_URL}/health`),
-          fetch(`${API_URL}/dashboard/stats`),
-          fetch(`${API_URL}/dashboard/fraud-trend`),
-          fetch(`${API_URL}/dashboard/sample-transactions?limit=100`),
-        ]);
+      const [
+        healthResponse,
+        statsResponse,
+        trendResponse,
+        legitimateSamplesResponse,
+        fraudSamplesResponse,
+      ] = await Promise.all([
+        fetch(`${API_URL}/health`),
+        fetch(`${API_URL}/dashboard/stats`),
+        fetch(`${API_URL}/dashboard/fraud-trend`),
+        // Fetch both classes explicitly. The first rows in the test CSV are
+        // mostly legitimate, so a single unfiltered request can hide fraud cases.
+        fetch(`${API_URL}/dashboard/sample-transactions?limit=50&actual_class=0`),
+        fetch(`${API_URL}/dashboard/sample-transactions?limit=50&actual_class=1`),
+      ]);
 
       if (
         !healthResponse.ok ||
         !statsResponse.ok ||
         !trendResponse.ok ||
-        !samplesResponse.ok
+        !legitimateSamplesResponse.ok ||
+        !fraudSamplesResponse.ok
       ) {
         throw new Error(
-          "The API could not load all dashboard data. Check the backend and rerun training if needed.",
+          "The API could not load all dashboard data. Check the backend and try again.",
         );
       }
 
-      const [statsData, trendData, samplesData] = await Promise.all([
+      const [statsData, trendData, legitimateData, fraudData] = await Promise.all([
         statsResponse.json(),
         trendResponse.json(),
-        samplesResponse.json(),
+        legitimateSamplesResponse.json(),
+        fraudSamplesResponse.json(),
       ]);
+
+      // Put legitimate and fraud examples into one selector and label each
+      // with its saved probability, so users can test both kinds of records.
+      const combinedSamples = [
+        ...(legitimateData.items as TestTransaction[]),
+        ...(fraudData.items as TestTransaction[]),
+      ];
 
       setStats(statsData as Stats);
       setTrend(trendData.points as TrendPoint[]);
-      setSamples(samplesData.items as TestTransaction[]);
+      setSamples(combinedSamples);
       setSelectedIndex(0);
+      setTransaction(
+        combinedSamples[0] ? { ...combinedSamples[0].transaction } : { ...initialTransaction },
+      );
+      setPrediction(null);
+      setExplanation(null);
+      setExplanationError("");
+      setError("");
       setApiStatus("online");
     } catch (err) {
       setApiStatus("offline");
@@ -193,6 +241,8 @@ function App() {
     setSelectedIndex(index);
     setTransaction({ ...sample.transaction });
     setPrediction(null);
+    setExplanation(null);
+    setExplanationError("");
     setError("");
   }
 
@@ -202,13 +252,17 @@ function App() {
       [key]: value === "" ? 0 : Number(value),
     }));
     setPrediction(null);
+    setExplanation(null);
+    setExplanationError("");
   }
 
   async function runPrediction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setExplanationError("");
     setPrediction(null);
+    setExplanation(null);
 
     try {
       const response = await fetch(`${API_URL}/predict`, {
@@ -218,7 +272,6 @@ function App() {
       });
 
       const result = await response.json();
-
       if (!response.ok) {
         const detail = result.detail;
         throw new Error(
@@ -229,6 +282,32 @@ function App() {
       }
 
       setPrediction(result as Prediction);
+
+      // Explanation is a separate request so a SHAP failure does not hide
+      // an otherwise valid prediction.
+      try {
+        const explainResponse = await fetch(`${API_URL}/explain`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction }),
+        });
+        const explainResult = await explainResponse.json();
+        if (!explainResponse.ok) {
+          const detail = explainResult.detail;
+          throw new Error(
+            typeof detail === "string"
+              ? detail
+              : detail?.message || "Could not load feature explanations.",
+          );
+        }
+        setExplanation(explainResult as Explanation);
+      } catch (err) {
+        setExplanationError(
+          err instanceof Error
+            ? err.message
+            : "The prediction succeeded, but the explanation could not be loaded.",
+        );
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -244,6 +323,8 @@ function App() {
     setTransaction({ ...initialTransaction });
     setSelectedIndex(-1);
     setPrediction(null);
+    setExplanation(null);
+    setExplanationError("");
     setError("");
   }
 
@@ -716,8 +797,9 @@ function App() {
                   <option value={-1}>Manual example transaction</option>
                   {samples.map((sample, index) => (
                     <option key={index} value={index}>
-                      #{index + 1} · {money(sample.amount)} · Actual:{" "}
-                      {sample.actual_class === 1 ? "Fraud" : "Legitimate"}
+                      {sample.actual_class === 1 ? "FRAUD" : "Legitimate"} ·
+                      #{index + 1} · {money(sample.amount)} · Saved risk:{" "}
+                      {percent(sample.fraud_probability)}
                     </option>
                   ))}
                 </select>
@@ -841,6 +923,97 @@ function App() {
                   </span>
                 </div>
               </div>
+            )}
+
+            {prediction && (
+              <section className="explanation-panel" aria-live="polite">
+                <div className="explanation-header">
+                  <div className="explanation-title-icon"><Sparkles size={19} /></div>
+                  <div>
+                    <span className="result-eyebrow">EXPLAINABLE AI</span>
+                    <h3>Why did the model make this prediction?</h3>
+                    <p>SHAP shows how each feature moved this prediction relative to the model baseline.</p>
+                  </div>
+                  {explanation && (
+                    <span className={`explanation-status ${explanation.explanation_consistent ? "is-consistent" : "is-warning"}`}>
+                      {explanation.explanation_consistent ? "Explanation verified" : "Check explanation scale"}
+                    </span>
+                  )}
+                </div>
+
+                {explanationError && (
+                  <div className="explanation-error" role="status">
+                    <AlertTriangle size={16} />
+                    <span>Prediction succeeded, but SHAP details could not be loaded: {explanationError}</span>
+                  </div>
+                )}
+
+                {!explanation && !explanationError && (
+                  <div className="explanation-loading"><LoaderCircle size={17} className="spin" /> Calculating feature contributions…</div>
+                )}
+
+                {explanation && (
+                  <>
+                    <div className="explanation-summary">
+                      <div>
+                        <span>Fraud probability</span>
+                        <strong>{percent(explanation.fraud_probability)}</strong>
+                      </div>
+                      <div>
+                        <span>Model baseline</span>
+                        <strong>{percent(explanation.base_value)}</strong>
+                      </div>
+                      <div>
+                        <span>Features analyzed</span>
+                        <strong>{number(30)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="contribution-heading">
+                      <h4>Top feature contributions</h4>
+                      <span>Sorted by absolute SHAP impact</span>
+                    </div>
+                    <div className="contribution-list">
+                      {explanation.top_features.map((item) => {
+                        const maxImpact = Math.max(
+                          ...explanation.top_features.map((feature) => Math.abs(feature.shap_value)),
+                          0.000001,
+                        );
+                        const width = Math.max(2, (Math.abs(item.shap_value) / maxImpact) * 100);
+                        const towardFraud = item.shap_value > 0;
+                        return (
+                          <div className="contribution-row" key={item.feature}>
+                            <div className="contribution-meta">
+                              <strong>{item.feature}</strong>
+                              <span>{towardFraud ? "Toward fraud" : item.shap_value < 0 ? "Away from fraud" : "Neutral"}</span>
+                              <b className={towardFraud ? "contribution-positive" : "contribution-negative"}>
+                                {item.shap_value > 0 ? "+" : ""}{item.shap_value.toFixed(5)}
+                              </b>
+                            </div>
+                            <div className="contribution-track">
+                              <div
+                                className={`contribution-fill ${towardFraud ? "positive" : "negative"}`}
+                                style={{ width: `${width}%` }}
+                              />
+                            </div>
+                            <div className="contribution-value">Feature value: {item.feature_value.toLocaleString("en-US", { maximumFractionDigits: 5 })}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="explanation-disclaimer">
+                      <AlertTriangle size={16} />
+                      <p>{explanation.feature_note} Positive SHAP values push toward fraud; negative values push away from fraud. Contributions are not individual fraud probabilities or proof of causation.</p>
+                    </div>
+                    {!explanation.explanation_consistent && (
+                      <div className="explanation-error" role="alert">
+                        SHAP contributions did not reconstruct the displayed probability within tolerance. Treat this explanation as provisional until the output scale is checked.
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
             )}
           </section>
 

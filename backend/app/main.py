@@ -9,6 +9,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import shap
 
 
 # ============================================================
@@ -35,7 +36,11 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as file:
 FEATURES = config["features"]
 THRESHOLD = float(config["threshold"])
 MODEL_NAME = config["model_name"]
+# ============================================================
+# SHAP EXPLAINER
+# ============================================================
 
+explainer = shap.TreeExplainer(model)
 
 # ============================================================
 # APPLICATION
@@ -209,6 +214,143 @@ def predict(request: TransactionRequest):
         "model": MODEL_NAME,
         "message": message,
     }
+
+
+
+# ============================================================
+# EXPLAIN A TRANSACTION PREDICTION
+# ============================================================
+
+@app.post("/explain")
+def explain_transaction(request: TransactionRequest):
+    transaction = request.transaction
+
+    missing = sorted(set(FEATURES) - set(transaction))
+    extra = sorted(set(transaction) - set(FEATURES))
+
+    if missing or extra:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Transaction features do not match the model.",
+                "missing_features": missing,
+                "unexpected_features": extra,
+            },
+        )
+
+    try:
+        values = [float(transaction[name]) for name in FEATURES]
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="All transaction features must be numeric.",
+        ) from exc
+
+    if not np.isfinite(values).all():
+        raise HTTPException(
+            status_code=422,
+            detail="All features must contain finite numbers.",
+        )
+
+    input_df = pd.DataFrame([values], columns=FEATURES)
+
+    try:
+        probability = float(model.predict_proba(input_df)[0, 1])
+        predicted_class = int(probability >= THRESHOLD)
+
+        explanation = explainer(input_df)
+        shap_values = np.asarray(explanation.values)
+
+        # For binary classification, select class 1 (fraud).
+        if shap_values.ndim == 3:
+            contributions = shap_values[0, :, 1]
+        elif shap_values.ndim == 2:
+            contributions = shap_values[0]
+        else:
+            raise ValueError(
+                f"Unexpected SHAP values shape: {shap_values.shape}"
+            )
+
+        base_values = np.asarray(explanation.base_values)
+
+        if base_values.ndim == 2:
+            base_value = float(base_values[0, 1])
+        elif base_values.ndim == 1 and len(base_values) == 2:
+            base_value = float(base_values[1])
+        elif base_values.size == 1:
+            base_value = float(base_values.reshape(-1)[0])
+        else:
+            raise ValueError(
+                f"Unexpected SHAP base values shape: {base_values.shape}"
+            )
+
+        if len(contributions) != len(FEATURES):
+            raise ValueError("SHAP feature count does not match model features.")
+
+        ranking = sorted(
+            [
+                {
+                    "feature": feature,
+                    "feature_value": float(input_df.iloc[0][feature]),
+                    "shap_value": float(contribution),
+                    "direction": (
+                        "toward_fraud"
+                        if contribution > 0
+                        else "away_from_fraud"
+                        if contribution < 0
+                        else "neutral"
+                    ),
+                }
+                for feature, contribution in zip(FEATURES, contributions)
+            ],
+            key=lambda item: abs(item["shap_value"]),
+            reverse=True,
+        )
+
+        # A consistency check: SHAP contributions should reconstruct
+        # the class-1 probability for this RandomForest explainer.
+        reconstructed_probability = base_value + float(
+            np.sum(contributions)
+        )
+
+        return {
+            "model": MODEL_NAME,
+            "prediction": predicted_class,
+            "label": "Fraudulent" if predicted_class else "Legitimate",
+            "fraud_probability": probability,
+            "threshold": THRESHOLD,
+            "base_value": base_value,
+            "reconstructed_probability": reconstructed_probability,
+            "explanation_consistent": bool(
+                np.isclose(
+                    reconstructed_probability,
+                    probability,
+                    atol=1e-5,
+                )
+            ),
+            "top_features": ranking[:10],
+            "positive_contributors": [
+                item for item in ranking
+                if item["shap_value"] > 0
+            ][:5],
+            "negative_contributors": [
+                item for item in ranking
+                if item["shap_value"] < 0
+            ][:5],
+            "feature_note": (
+                "V1-V28 are anonymized PCA components. Their SHAP "
+                "contributions describe model behavior, not causal "
+                "reasons or identifiable real-world transaction attributes."
+            ),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not explain this transaction: {exc}",
+        ) from exc
 
 
 # ============================================================

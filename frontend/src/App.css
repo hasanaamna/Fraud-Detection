@@ -1337,3 +1337,139 @@ h1, h2, h3, p {
     font-size: 11px;
   }
 }
+
+
+
+
+/* ============================================================
+   EXPLAINABLE AI / SHAP CONTRIBUTION PANEL
+   Append these styles to frontend/src/App.css
+   ============================================================ */
+.explanation-panel {
+  margin-top: 20px;
+  padding: 22px;
+  border: 1px solid #26384b;
+  border-radius: 14px;
+  background: #0e1a29;
+  color: #e8eef7;
+}
+.explanation-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin-bottom: 20px;
+}
+.explanation-title-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #27d6b1;
+  background: rgba(39, 214, 177, .12);
+}
+.explanation-header h3 {
+  margin: 5px 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.explanation-header p {
+  margin: 0;
+  color: #91a4bd;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.explanation-status {
+  margin-left: auto;
+  white-space: nowrap;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.explanation-status.is-consistent {
+  color: #5ce6c8;
+  border: 1px solid rgba(39, 214, 177, .25);
+  background: rgba(39, 214, 177, .09);
+}
+.explanation-status.is-warning {
+  color: #ffc66b;
+  border: 1px solid rgba(243, 182, 75, .25);
+  background: rgba(243, 182, 75, .09);
+}
+.explanation-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.explanation-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid #26384b;
+  border-radius: 10px;
+  background: #111f30;
+}
+.explanation-summary span { color: #91a4bd; font-size: 11px; }
+.explanation-summary strong { font-size: 19px; font-weight: 700; }
+.contribution-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.contribution-heading h4 { margin: 0; font-size: 14px; }
+.contribution-heading span { color: #8497af; font-size: 11px; }
+.contribution-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 22px; }
+.contribution-row { min-width: 0; }
+.contribution-meta {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 11px;
+}
+.contribution-meta strong { color: #e8eef7; font-size: 12px; }
+.contribution-meta span { color: #91a4bd; }
+.contribution-meta b { font-variant-numeric: tabular-nums; font-size: 11px; }
+.contribution-positive { color: #ff8294; }
+.contribution-negative { color: #49ddbd; }
+.contribution-track { height: 7px; overflow: hidden; border-radius: 999px; background: #233246; }
+.contribution-fill { height: 100%; border-radius: inherit; }
+.contribution-fill.positive { background: #f36f83; }
+.contribution-fill.negative { background: #27d6b1; }
+.contribution-value { margin-top: 5px; color: #758aa5; font-size: 10px; }
+.explanation-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 12px 14px;
+  border: 1px solid rgba(243, 182, 75, .2);
+  border-radius: 9px;
+  color: #f3bd63;
+  background: rgba(243, 182, 75, .08);
+}
+.explanation-disclaimer svg { flex: 0 0 auto; margin-top: 2px; }
+.explanation-disclaimer p { margin: 0; font-size: 11px; line-height: 1.65; }
+.explanation-loading, .explanation-error {
+  display: flex; align-items: center; gap: 9px; padding: 13px 14px;
+  border-radius: 9px; font-size: 12px;
+}
+.explanation-loading { color: #9db0c8; background: #111f30; }
+.explanation-error { color: #ff9baa; background: rgba(243, 111, 131, .09); border: 1px solid rgba(243, 111, 131, .2); }
+@media (max-width: 760px) {
+  .explanation-panel { padding: 16px; }
+  .explanation-header { flex-wrap: wrap; }
+  .explanation-status { margin-left: 0; }
+  .contribution-list { grid-template-columns: 1fr; }
+  .explanation-summary { gap: 8px; }
+  .explanation-summary > div { padding: 10px; }
+  .explanation-summary strong { font-size: 16px; }
+  .contribution-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
