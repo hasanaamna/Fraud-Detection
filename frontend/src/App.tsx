@@ -109,11 +109,11 @@ type Prediction = {
   message: string;
 };
 
-const featureNames = [
-  "Time",
-  ...Array.from({ length: 28 }, (_, i) => `V${i + 1}`),
-  "Amount",
-];
+// const featureNames = [
+//   "Time",
+//   ...Array.from({ length: 28 }, (_, i) => `V${i + 1}`),
+//   "Amount",
+// ];
 
 const initialTransaction: Record<string, number> = {
   Time: 0,
